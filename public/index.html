@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Чат</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: sans-serif; background: #0f172a; color: #fff; height: 100vh; }
+  #auth { height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 12px; padding: 20px; }
+  #auth input { width: 100%; max-width: 300px; padding: 14px; border-radius: 10px; border: none; background: #1e293b; color: #fff; font-size: 16px; }
+  #auth button { width: 100%; max-width: 300px; padding: 14px; border: none; border-radius: 10px; background: #6366f1; color: #fff; font-size: 16px; font-weight: bold; cursor: pointer; }
+  #auth button.gray { background: #334155; }
+  #err { color: #f87171; font-size: 14px; height: 18px; }
+  #chat { display: none; height: 100vh; flex-direction: column; }
+  #chat.show { display: flex; }
+  #top { padding: 14px 20px; background: #1e293b; display: flex; justify-content: space-between; align-items: center; }
+  #top button { padding: 6px 12px; border: none; border-radius: 6px; background: #334155; color: #fff; cursor: pointer; }
+  #msgs { flex: 1; overflow-y: auto; padding: 16px 20px; }
+  .msg { max-width: 75%; background: #1e293b; padding: 8px 12px; border-radius: 10px; margin-bottom: 8px; word-wrap: break-word; }
+  .msg b { font-size: 12px; color: #818cf8; display: block; margin-bottom: 2px; }
+  .msg.own { margin-left: auto; background: #4f46e5; }
+  .msg.own b { color: #c7d2fe; }
+  #form { display: flex; gap: 8px; padding: 12px; background: #1e293b; }
+  #form input { flex: 1; padding: 12px; border-radius: 10px; border: none; background: #0f172a; color: #fff; font-size: 15px; }
+  #form button { padding: 12px 20px; border: none; border-radius: 10px; background: #6366f1; color: #fff; cursor: pointer; font-size: 18px; }
+</style>
+</head>
+<body>
+
+<div id="auth">
+  <h2>💬 Чат</h2>
+  <input id="nick" placeholder="Ник" autocomplete="username">
+  <input id="pass" type="password" placeholder="Пароль" autocomplete="current-password">
+  <div id="err"></div>
+  <button onclick="reg()">Регистрация</button>
+  <button class="gray" onclick="log()">Вход</button>
+</div>
+
+<div id="chat">
+  <div id="top">
+    <span>Вы: <b id="me"></b></span>
+    <button onclick="out()">Выйти</button>
+  </div>
+  <div id="msgs"></div>
+  <form id="form" onsubmit="send(event)">
+    <input id="text" placeholder="Сообщение..." required autocomplete="off">
+    <button>➤</button>
+  </form>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let user = null;
+
+const api = (url, body) => fetch(url, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(body)
+}).then(r => r.json());
+
+async function reg() {
+  const d = await api('/register', { nick: $('nick').value, password: $('pass').value });
+  if (d.error) return $('err').textContent = d.error;
+  enter($('nick').value);
+}
+
+async function log() {
+  const d = await api('/login', { nick: $('nick').value, password: $('pass').value });
+  if (d.error) return $('err').textContent = d.error;
+  enter($('nick').value);
+}
+
+function enter(nick) {
+  user = nick;
+  localStorage.setItem('currentUser', nick);
+  $('auth').style.display = 'none';
+  $('chat').classList.add('show');
+  $('me').textContent = nick;
+  load();
+  setInterval(load, 2000);
+}
+
+function out() {
+  localStorage.removeItem('currentUser');
+  location.reload();
+}
+
+function esc(s) {
+  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function load() {
+  const list = await fetch('/messages').then(r => r.json());
+  $('msgs').innerHTML = list.map(m =>
+    `<div class="msg${m.nick === user ? ' own' : ''}"><b>${esc(m.nick)}</b>${esc(m.text)}</div>`
+  ).join('');
+  $('msgs').scrollTop = $('msgs').scrollHeight;
+}
+
+async function send(e) {
+  e.preventDefault();
+  const text = $('text').value.trim();
+if (!text) return;
+  await api('/messages', { nick: user, text });
+  $('text').value = '';
+  load();
+}
+
+const saved = localStorage.getItem('currentUser');
+if (saved) enter(saved);
+</script>
+</body>
+</html>
