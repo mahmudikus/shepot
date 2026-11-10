@@ -6,12 +6,14 @@
 <title>Чат</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: sans-serif; background: #0f172a; color: #fff; height: 100vh; }
+  body { font-family: sans-serif; background: #0f172a; color: #fff; height: 100vh; overflow: hidden; }
   #auth { height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 12px; padding: 20px; }
+  #auth h2 { margin-bottom: 10px; }
   #auth input { width: 100%; max-width: 300px; padding: 14px; border-radius: 10px; border: none; background: #1e293b; color: #fff; font-size: 16px; }
   #auth button { width: 100%; max-width: 300px; padding: 14px; border: none; border-radius: 10px; background: #6366f1; color: #fff; font-size: 16px; font-weight: bold; cursor: pointer; }
   #auth button.gray { background: #334155; }
-  #err { color: #f87171; font-size: 14px; height: 18px; }
+  #err { color: #f87171; font-size: 14px; height: 18px; text-align: center; }
+
   #chat { display: none; height: 100vh; flex-direction: column; }
   #chat.show { display: flex; }
   #top { padding: 14px 20px; background: #1e293b; display: flex; justify-content: space-between; align-items: center; }
@@ -28,15 +30,17 @@
 </head>
 <body>
 
+<!-- Экран входа -->
 <div id="auth">
   <h2>💬 Чат</h2>
-  <input id="nick" placeholder="Ник" autocomplete="username">
-  <input id="pass" type="password" placeholder="Пароль" autocomplete="current-password">
+  <input id="email" type="email" placeholder="Email (например, anya@mail.ru)">
+  <input id="pass" type="password" placeholder="Пароль (минимум 6 символов)">
   <div id="err"></div>
   <button onclick="reg()">Регистрация</button>
   <button class="gray" onclick="log()">Вход</button>
 </div>
 
+<!-- Экран чата -->
 <div id="chat">
   <div id="top">
     <span>Вы: <b id="me"></b></span>
@@ -49,66 +53,111 @@
   </form>
 </div>
 
-<script>
-const $ = id => document.getElementById(id);
-let user = null;
+<!-- Подключаем Firebase -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+  import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+  import { getFirestore, collection, addDoc, onSnapshot, query, orderBy } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-const api = (url, body) => fetch(url, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify(body)
-}).then(r => r.json());
+  // Твои ключи
+  const firebaseConfig = {
+    apiKey: "AIzaSyAdfVbrv7JAwZGdVgCapemd8a65R8uRPRs",
+    authDomain: "shepot-db359.firebaseapp.com",
+    projectId: "shepot-db359",
+    storageBucket: "shepot-db359.firebasestorage.app",
+    messagingSenderId: "378918064606",
+    appId: "1:378918064606:web:d528037e05ee711ecb4d4f"
+  };
 
-async function reg() {
-  const d = await api('/register', { nick: $('nick').value, password: $('pass').value });
-  if (d.error) return $('err').textContent = d.error;
-  enter($('nick').value);
-}
+  // Запуск Firebase
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  const msgsCollection = collection(db, 'messages');
 
-async function log() {
-  const d = await api('/login', { nick: $('nick').value, password: $('pass').value });
-  if (d.error) return $('err').textContent = d.error;
-  enter($('nick').value);
-}
+  const $ = id => document.getElementById(id);
+  const apiErr = (code) => {
+    if(code === 'auth/email-already-in-use') return 'Этот email уже занят';
+    if(code === 'auth/invalid-credential' || code === 'auth/user-not-found' || code === 'auth/wrong-password') return 'Неверный email или пароль';
+   if(code === 'auth/weak-password') return 'Пароль слишком короткий (мин. 6 символов)';
+    if(code === 'auth/invalid-email') return 'Некорректный email';
+    return code;
+  };
 
-function enter(nick) {
-  user = nick;
-  localStorage.setItem('currentUser', nick);
-  $('auth').style.display = 'none';
-  $('chat').classList.add('show');
-  $('me').textContent = nick;
-  load();
-  setInterval(load, 2000);
-}
+  // --- РЕГИСТРАЦИЯ ---
+  window.reg = async () => {
+    const email = $('email').value.trim();
+    const pass = $('pass').value;
+    $('err').textContent = '';
+    try {
+      await createUserWithEmailAndPassword(auth, email, pass);
+    } catch(e) {
+      $('err').textContent = apiErr(e.code);
+    }
+  };
 
-function out() {
-  localStorage.removeItem('currentUser');
-  location.reload();
-}
+  // --- ВХОД ---
+  window.log = async () => {
+    const email = $('email').value.trim();
+    const pass = $('pass').value;
+    $('err').textContent = '';
+    try {
+      await signInWithEmailAndPassword(auth, email, pass);
+    } catch(e) {
+      $('err').textContent = apiErr(e.code);
+    }
+  };
 
-function esc(s) {
-  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
+  // --- ВЫХОД ---
+  window.out = () => signOut(auth);
 
-async function load() {
-  const list = await fetch('/messages').then(r => r.json());
-  $('msgs').innerHTML = list.map(m =>
-    `<div class="msg${m.nick === user ? ' own' : ''}"><b>${esc(m.nick)}</b>${esc(m.text)}</div>`
-  ).join('');
-  $('msgs').scrollTop = $('msgs').scrollHeight;
-}
+  // --- ОТПРАВКА ---
+  window.send = async (e) => {
+    e.preventDefault();
+    const text = $('text').value.trim();
+    if(!text) return;
+    $('text').value = '';
+    const nick = auth.currentUser.email.split('@')[0];
+    await addDoc(msgsCollection, { nick, text, time: Date.now() });
+  };
 
-async function send(e) {
-  e.preventDefault();
-  const text = $('text').value.trim();
-if (!text) return;
-  await api('/messages', { nick: user, text });
-  $('text').value = '';
-  load();
-}
+  // --- СЛЕЖИМ ЗА ВХОДОМ ---
+  let unsubscribeMsgs = null;
 
-const saved = localStorage.getItem('currentUser');
-if (saved) enter(saved);
+  onAuthStateChanged(auth, user => {
+    if(user) {
+      $('auth').style.display = 'none';
+      $('chat').classList.add('show');
+      $('me').textContent = user.email.split('@')[0];
+
+      // Загружаем сообщения в реальном времени
+      const q = query(msgsCollection, orderBy('time', 'asc'));
+      unsubscribeMsgs = onSnapshot(q, (snapshot) => {
+        $('msgs').innerHTML = '';
+        snapshot.forEach(doc => {
+          const m = doc.data();
+          const isOwn = m.nick === user.email.split('@')[0];
+          const div = document.createElement('div');
+          div.className = 'msg' + (isOwn ? ' own' : '');
+          
+          const b = document.createElement('b');
+          b.textContent = m.nick;
+          
+          const t = document.createElement('span');
+          t.textContent = m.text;
+          
+          div.append(b, t);
+          $('msgs').appendChild(div);
+        });
+        $('msgs').scrollTop = $('msgs').scrollHeight;
+      });
+
+    } else {
+      $('auth').style.display = 'flex';
+      $('chat').classList.remove('show');
+      if(unsubscribeMsgs) unsubscribeMsgs();
+    }
+  });
 </script>
 </body>
 </html>
